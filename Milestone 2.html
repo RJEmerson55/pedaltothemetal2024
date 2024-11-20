@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Milestone 2 | Book Search Engine</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script>
+      $(document).ready(function () {
+        var startIndex = 0;
+        var maxResults = 10;
+
+        function appendBookResults(items) {
+          items.forEach(function (item) {
+            var id = item.id;
+            var title = item.volumeInfo.title;
+            var authors = item.volumeInfo.authors
+              ? item.volumeInfo.authors.join(", ")
+              : "Unknown Author";
+            var publisher = item.volumeInfo.publisher || "Unknown Publisher";
+            var publishedDate = item.volumeInfo.publishedDate || "Unknown Date";
+            var description =
+              item.volumeInfo.description || "No description available";
+            var thumbnail = item.volumeInfo.imageLinks
+              ? item.volumeInfo.imageLinks.thumbnail
+              : "https://via.placeholder.com/128x192?text=No+Image";
+
+            $("#results").append(
+              '<div class="book-result">' +
+                '<div class="book-info">' +
+                '<h2><a href="bookDetails.html?id=' +
+                id +
+                '">' +
+                title +
+                "</a></h2>" +
+                '<img src="' +
+                thumbnail +
+                '" alt="Book cover" class="book-cover">' +
+                "</div>" +
+                "</div>"
+            );
+          });
+        }
+
+        function addPaginationControls(totalItems) {
+          $("#pagination").empty();
+          var totalPages = Math.ceil(totalItems / maxResults);
+          if (totalPages > 1) {
+            var paginationDropdown = $(
+              '<select id="pagination-dropdown"></select>'
+            );
+            for (var i = 0; i < totalPages; i++) {
+              var option = $("<option></option>")
+                .attr("value", i)
+                .text("Page " + (i + 1));
+              paginationDropdown.append(option);
+            }
+            $("#pagination").append(paginationDropdown);
+
+            $("#pagination-dropdown").change(function () {
+              startIndex = $(this).val() * maxResults;
+              searchBooks($("#search-query").val(), startIndex);
+            });
+          }
+        }
+
+        function searchBooks(query, startIndex) {
+          $.ajax({
+            url:
+              "https://www.googleapis.com/books/v1/volumes?q=" +
+              query +
+              "&startIndex=" +
+              startIndex +
+              "&maxResults=" +
+              maxResults,
+            method: "GET",
+            success: function (response) {
+              $("#results").empty();
+              if (response.items) {
+                appendBookResults(response.items);
+                addPaginationControls(response.totalItems);
+              } else {
+                $("#results").append("<p>No results found</p>");
+              }
+            },
+            error: function () {
+              $("#results").empty();
+              $("#results").append(
+                "<p>An error occurred while fetching the results</p>"
+              );
+            },
+          });
+        }
+
+        $("#search-button").click(function () {
+          var query = $("#search-query").val();
+          if (query) {
+            startIndex = 0; // Reset to the first page
+            searchBooks(query, startIndex);
+          } else {
+            $("#results").empty();
+            $("#results").append("<p>Please enter a search query</p>");
+          }
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <header>
+      <h1>Milestone 2 | Book Search</h1>
+      <nav>
+        <a href="Milestone 2.html">Home</a>
+        <a href="MyBookshelf">My Bookshelf</a>
+      </nav>
+    </header>
+    <main>
+      <div class="search-container">
+        <input
+          type="text"
+          id="search-query"
+          placeholder="Enter author or book title"
+        />
+        <button id="search-button">Search</button>
+      </div>
+      <div id="results" class="grid-container"></div>
+      <div id="pagination"></div>
+    </main>
+  </body>
+</html>
