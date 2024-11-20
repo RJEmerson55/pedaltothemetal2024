@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Book Search</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/3.2.1/mustache.min.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>Book Search</h1>
+    </header>
+    <main>
+      <div class="search-container">
+        <input
+          type="text"
+          id="search-query"
+          placeholder="Enter book title or author"
+        />
+        <button id="search-button">Search</button>
+      </div>
+      <div id="results" class="grid-container"></div>
+      <div id="pagination"></div>
+      <div id="book-details"></div>
+      <h2>My Bookshelf</h2>
+      <div id="bookshelf" class="grid-container"></div>
+    </main>
+    <script>
+      $(document).ready(function () {
+        var startIndex = 0;
+        var maxResults = 10;
+        var totalResults = 0;
+        var currentPage = 1;
+        var isGridLayout = true;
+        var currentResults = [];
+
+        var bookTemplate = `
+                <div class="book-item">
+                    <img src="{{thumbnail}}" alt="Book cover" class="book-cover">
+                    <div class="book-info">
+                        <h2><a href="#" class="book-title" data-id="{{id}}">{{title}}</a></h2>
+                        <p><strong>Authors:</strong> {{authors}}</p>
+                    </div>
+                </div>
+            `;
+
+        var listBookTemplate = `
+                <div class="book-item list-item">
+                    <div class="book-info">
+                        <h2><a href="#" class="book-title" data-id="{{id}}">{{title}}</a></h2>
+                        <p><strong>Authors:</strong> {{authors}}</p>
+                    </div>
+                </div>
+            `;
+
+        function appendBookResults(items) {
+          $("#results").empty();
+          items.forEach(function (item) {
+            var data = {
+              id: item.id,
+              title: item.volumeInfo.title,
+              authors: item.volumeInfo.authors
+                ? item.volumeInfo.authors.join(", ")
+                : "Unknown Author",
+              thumbnail: item.volumeInfo.imageLinks
+                ? item.volumeInfo.imageLinks.thumbnail
+                : "https://via.placeholder.com/128x192?text=No+Image",
+            };
+            var template = isGridLayout ? bookTemplate : listBookTemplate;
+            var rendered = Mustache.render(template, data);
+            $("#results").append(rendered);
+          });
+
+          // Add click event for book titles
+          $(".book-title").click(function (event) {
+            event.preventDefault();
+            var bookId = $(this).data("id");
+            fetchBookDetails(bookId);
+          });
+        }
+
+        function appendBookshelfResults(items) {
+          $("#bookshelf").empty();
+          items.forEach(function (item) {
+            var data = {
+              id: item.id,
+              title: item.volumeInfo.title,
+              authors: item.volumeInfo.authors
+                ? item.volumeInfo.authors.join(", ")
+                : "Unknown Author",
+              thumbnail: item.volumeInfo.imageLinks
+                ? item.volumeInfo.imageLinks.thumbnail
+                : "https://via.placeholder.com/128x192?text=No+Image",
+            };
+            var template = isGridLayout ? bookTemplate : listBookTemplate;
+            var rendered = Mustache.render(template, data);
+            $("#bookshelf").append(rendered);
+          });
+
+          // Add click event for book titles
+          $(".book-title").click(function (event) {
+            event.preventDefault();
+            var bookId = $(this).data("id");
+            fetchBookDetails(bookId);
+          });
+        }
+
+        function fetchBookDetails(bookId) {
+          $.ajax({
+            url: "https://www.googleapis.com/books/v1/volumes/" + bookId,
+            method: "GET",
+            success: function (response) {
+              $("#book-details").empty();
+              if (response) {
+                var title = response.volumeInfo.title;
+                var authors = response.volumeInfo.authors
+                  ? response.volumeInfo.authors.join(", ")
+                  : "Unknown Author";
+                var publisher =
+                  response.volumeInfo.publisher || "Unknown Publisher";
+                var publishedDate =
+                  response.volumeInfo.publishedDate || "Unknown Date";
+                var description =
+                  response.volumeInfo.description || "No description available";
+                var thumbnail = response.volumeInfo.imageLinks
+                  ? response.volumeInfo.imageLinks.thumbnail
+                  : "https://via.placeholder.com/128x192?text=No+Image";
+                var infoLink = response.volumeInfo.infoLink;
+                var price = response.saleInfo.listPrice
+                  ? response.saleInfo.listPrice.amount
+                  : "Free";
+
+                // Append the data to the book details section
+                $("#book-details").append(
+                  '<div class="book-detail">' +
+                    '<img src="' +
+                    thumbnail +
+                    '" alt="Book cover" class="book-cover">' +
+                    '<div class="book-info">' +
+                    "<h2>" +
+                    title +
+                    "</h2>" +
+                    "<p><strong>Authors:</strong> " +
+                    authors +
+                    "</p>" +
+                    "<p><strong>Publisher:</strong> " +
+                    publisher +
+                    "</p>" +
+                    "<p><strong>Published Date:</strong> " +
+                    publishedDate +
+                    "</p>" +
+                    "<p><strong>Description:</strong> " +
+                    description +
+                    "</p>" +
+                    '<a href="' +
+                    infoLink +
+                    '" target="_blank">Google Play link</a>' +
+                    "<p><strong>Price:</strong> $" +
+                    price +
+                    "</p>" +
+                    "</div>" +
+                    "</div>"
+                );
+              } else {
+                $("#book-details").append(
+                  "<p>No details found for this book</p>"
+                );
+              }
+            },
+            error: function () {
+              $("#book-details").empty();
+              $("#book-details").append(
+                "<p>An error occurred while fetching the book details</p>"
+              );
+            },
+          });
+        }
+
+        function searchBooks(query, startIndex) {
+          $.ajax({
+            url:
+              "https://www.googleapis.com/books/v1/volumes?q=" +
+              query +
+              "&startIndex=" +
+              startIndex +
+              "&maxResults=" +
+              maxResults,
+            method: "GET",
+            success: function (response) {
+              if (response.items) {
+                currentResults = response.items;
+                totalResults = response.totalItems;
+                appendBookResults(currentResults);
+                updatePagination();
+              } else {
+                $("#results").empty();
+                $("#results").append("<p>No results found</p>");
+                $("#pagination").empty();
+              }
+            },
+            error: function () {
+              $("#results").empty();
+              $("#results").append(
+                "<p>An error occurred while fetching the results</p>"
+              );
+              $("#pagination").empty();
+            },
+          });
+        }
+
+        function triggerSearch() {
+          var query = $("#search-query").val();
+          if (query) {
+            startIndex = 0;
+            currentPage = 1;
+            searchBooks(query, startIndex);
+          } else {
+            $("#results").empty();
+            $("#results").append("<p>Please enter a search query</p>");
+            $("#pagination").empty();
+          }
+        }
+
+        function updatePagination() {
+          $("#pagination").empty();
+          var totalPages = Math.ceil(totalResults / maxResults);
+          var maxPagesToShow = 5;
+
+          if (totalPages > 1) {
+            var startPage = 1;
+            var endPage = Math.min(totalPages, maxPagesToShow);
+
+            for (var i = startPage; i <= endPage; i++) {
+              var button = $("<button></button>")
+                .attr("data-page", i - 1)
+                .text(i)
+                .addClass("pagination-button");
+              if (i === currentPage) {
+                button.addClass("active");
+              }
+              $("#pagination").append(button);
+            }
+
+            $("#pagination button").click(function () {
+              currentPage = parseInt($(this).attr("data-page")) + 1;
+              startIndex = $(this).attr("data-page") * maxResults;
+              searchBooks($("#search-query").val(), startIndex);
+            });
+          }
+        }
+
+        $("#search-button").click(function () {
+          triggerSearch();
+        });
+
+        $("#search-query").keypress(function (event) {
+          if (event.which === 13) {
+            // Enter key pressed
+            triggerSearch();
+          }
+        });
+
+        $("#toggle-layout").click(function () {
+          isGridLayout = !isGridLayout;
+          if (isGridLayout) {
+            $("#results")
+              .removeClass("list-container")
+              .addClass("grid-container");
+            $("#bookshelf")
+              .removeClass("list-container")
+              .addClass("grid-container");
+          } else {
+            $("#results")
+              .removeClass("grid-container")
+              .addClass("list-container");
+            $("#bookshelf")
+              .removeClass("grid-container")
+              .addClass("list-container");
+          }
+          appendBookResults(currentResults);
+          fetchBookshelf(); // Ensure bookshelf is updated as well
+        });
+
+        function fetchBookshelf() {
+          $.ajax({
+            url: "https://books.google.com/books?hl=en&as_coll=0&num=10&uid=100734958934555702226&source=gbs_slider_cls_metadata_0_mylibrary_title",
+            method: "GET",
+            success: function (response) {
+              if (response.items) {
+                appendBookshelfResults(response.items);
+              } else {
+                $("#bookshelf").empty();
+                $("#bookshelf").append(
+                  "<p>No books found in this bookshelf</p>"
+                );
+              }
+            },
+            error: function () {
+              $("#bookshelf").empty();
+              $("#bookshelf").append(
+                "<p>An error occurred while fetching the bookshelf</p>"
+              );
+            },
+          });
+        }
+
+        fetchBookshelf();
+      });
+    </script>
+  </body>
+</html>
