@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Movie Search</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/3.2.1/mustache.min.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>Movie Search</h1>
+    </header>
+    <main>
+      <div class="search-container">
+        <input
+          type="text"
+          id="search-query"
+          placeholder="Search film title/director"
+        />
+        <button id="search-button">Search</button>
+        <button id="toggle-layout">Toggle Layout</button>
+        <select id="sort-options" class="custom-select">
+          <option value="releaseDate" selected>Release Date</option>
+          <option value="score">Movie Score</option>
+          <option value="alphabetical">Alphabetical Order</option>
+        </select>
+      </div>
+      <div id="results" class="grid-container"></div>
+      <div id="pagination"></div>
+      <div id="movie-details"></div>
+      <h2>Popular Films and Television Series</h2>
+      <select id="genre-options" class="custom-select">
+        <option value="">Genre</option>
+      </select>
+      <div id="collection" class="grid-container"></div>
+    </main>
+    <script>
+      $(document).ready(function () {
+        var startIndex = 1;
+        var maxResults = 10;
+        var currentPage = 1;
+        var isGridLayout = true;
+        var currentResults = [];
+        var allResults = [];
+        var currentCollection = [];
+        var sortOption = "releaseDate"; // Default sort option
+        var selectedGenre = "";
+
+        var movieTemplate = `
+                <div class="movie-item">
+                    <img src="https://image.tmdb.org/t/p/w500{{thumbnail}}" alt="Movie cover" class="movie-cover">
+                    <div class="movie-info">
+                        <h2><a href="#" class="movie-title" data-id="{{id}}">{{title}}</a></h2>
+                        <p><strong>Release Date:</strong> {{releaseDate}}</p>
+                        <p><strong>Score:</strong> {{score}}</p>
+                        <div class="movie-details" style="display: none;">
+                            <p><strong>Director:</strong> <a href="#" class="person-link" data-id="{{directorId}}">{{director}}</a></p>
+                            <p><strong>Actors:</strong> {{#actors}}<a href="#" class="person-link" data-id="{{id}}">{{name}}</a>{{^last}}, {{/last}}{{/actors}}</p>
+                            <p><strong>Description:</strong> {{description}}</p>
+                            <a href="{{infoLink}}" target="_blank">More Info</a>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        var listMovieTemplate = `
+                <div class="movie-item list-item">
+                    <div class="movie-info">
+                        <h2><a href="#" class="movie-title" data-id="{{id}}">{{title}}</a></h2>
+                        <p><strong>Release Date:</strong> {{releaseDate}}</p>
+                        <p><strong>Score:</strong> {{score}}</p>
+                        <div class="movie-details" style="display: none;">
+                            <p><strong>Director:</strong> <a href="#" class="person-link" data-id="{{directorId}}">{{director}}</a></p>
+                            <p><strong>Actors:</strong> {{#actors}}<a href="#" class="person-link" data-id="{{id}}">{{name}}</a>{{^last}}, {{/last}}{{/actors}}</p>
+                            <p><strong>Description:</strong> {{description}}</p>
+                            <a href="{{infoLink}}" target="_blank">More Info</a>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+        function sortItems(items) {
+          if (sortOption === "releaseDate") {
+            items.sort(
+              (a, b) => new Date(b.release_date) - new Date(a.release_date)
+            );
+          } else if (sortOption === "score") {
+            items.sort((a, b) => b.vote_average - a.vote_average);
+          } else if (sortOption === "alphabetical") {
+            items.sort((a, b) => a.title.localeCompare(b.title));
+          }
+        }
+
+        function appendMovieResults(items, container) {
+          container.empty();
+          items.forEach(function (item) {
+            var data = {
+              id: item.id,
+              title: item.title || item.name,
+              releaseDate: item.release_date || "Unknown",
+              score: item.vote_average || "N/A",
+              description: item.overview || "No description available",
+              thumbnail: item.poster_path
+                ? item.poster_path
+                : "/128x192?text=No+Image",
+              infoLink: "https://www.themoviedb.org/movie/" + item.id,
+            };
+
+            $.ajax({
+              url:
+                "https://api.themoviedb.org/3/movie/" +
+                item.id +
+                "?api_key=56e665fbc9c321fad4cfb7957c12244b&append_to_response=credits",
+              method: "GET",
+              success: function (response) {
+                data.director =
+                  response.credits.crew.find(
+                    (member) => member.job === "Director"
+                  )?.name || "Unknown Director";
+                data.directorId =
+                  response.credits.crew.find(
+                    (member) => member.job === "Director"
+                  )?.id || "";
+                data.actors = response.credits.cast
+                  .slice(0, 3)
+                  .map((actor, index, array) => ({
+                    id: actor.id,
+                    name: actor.name,
+                    last: index === array.length - 1,
+                  })) || [{ name: "Unknown Actors", id: "" }];
+                var template = isGridLayout ? movieTemplate : listMovieTemplate;
+                var rendered = Mustache.render(template, data);
+                container.append(rendered);
+
+                // Add click event for movie titles to toggle details
+                container
+                  .find(".movie-title")
+                  .off("click")
+                  .on("click", function (event) {
+                    event.preventDefault();
+                    $(this)
+                      .closest(".movie-info")
+                      .find(".movie-details")
+                      .toggle();
+                  });
+
+                // Add click event for person links to fetch more info
+                container
+                  .find(".person-link")
+                  .off("click")
+                  .on("click", function (event) {
+                    event.preventDefault();
+                    var personId = $(this).data("id");
+                    fetchPersonDetails(personId);
+                  });
+              },
+              error: function () {
+                data.director = "Unknown Director";
+                data.directorId = "";
+                data.actors = [{ name: "Unknown Actors", id: "" }];
+                var template = isGridLayout ? movieTemplate : listMovieTemplate;
+                var rendered = Mustache.render(template, data);
+                container.append(rendered);
+
+                // Add click event for movie titles to toggle details
+                container
+                  .find(".movie-title")
+                  .off("click")
+                  .on("click", function (event) {
+                    event.preventDefault();
+                    $(this)
+                      .closest(".movie-info")
+                      .find(".movie-details")
+                      .toggle();
+                  });
+
+                // Add click event for person links to fetch more info
+                container
+                  .find(".person-link")
+                  .off("click")
+                  .on("click", function (event) {
+                    event.preventDefault();
+                    var personId = $(this).data("id");
+                    fetchPersonDetails(personId);
+                  });
+              },
+            });
+          });
+        }
+
+        function fetchPersonDetails(personId) {
+          $.ajax({
+            url:
+              "https://api.themoviedb.org/3/person/" +
+              personId +
+              "?api_key=56e665fbc9c321fad4cfb7957c12244b",
+            method: "GET",
+            success: function (response) {
+              $("#movie-details").empty();
+              if (response) {
+                var name = response.name;
+                var biography = response.biography || "No biography available";
+                var birthday = response.birthday || "Unknown";
+                var placeOfBirth = response.place_of_birth || "Unknown";
+                var profilePath = response.profile_path
+                  ? "https://image.tmdb.org/t/p/w500" + response.profile_path
+                  : "https://via.placeholder.com/128x192?text=No+Image";
+
+                // Append the data to the movie details section
+                $("#movie-details").append(
+                  '<div class="person-detail">' +
+                    '<img src="' +
+                    profilePath +
+                    '" alt="Profile picture" class="profile-picture">' +
+                    '<div class="person-info">' +
+                    "<h2>" +
+                    name +
+                    "</h2>" +
+                    "<p><strong>Biography:</strong> " +
+                    biography +
+                    "</p>" +
+                    "<p><strong>Birthday:</strong> " +
+                    birthday +
+                    "</p>" +
+                    "<p><strong>Place of Birth:</strong> " +
+                    placeOfBirth +
+                    "</p>" +
+                    "</div>" +
+                    "</div>"
+                );
+              } else {
+                $("#movie-details").append(
+                  "<p>No details found for this person</p>"
+                );
+              }
+            },
+            error: function () {
+              $("#movie-details").empty();
+              $("#movie-details").append(
+                "<p>An error occurred while fetching the person details</p>"
+              );
+            },
+          });
+        }
+
+        function fetchAllResults(query, page = 1) {
+          var url =
+            "https://api.themoviedb.org/3/search/movie?api_key=56e665fbc9c321fad4cfb7957c12244b&query=" +
+            query;
+          url += "&page=" + page;
+          return $.ajax({
+            url: url,
+            method: "GET",
+          }).then(function (response) {
+            if (response.results) {
+              allResults = allResults.concat(response.results);
+              if (page < response.total_pages && page < 10) {
+                // Limit to 10 pages
+                return fetchAllResults(query, page + 1);
+              }
+            }
+          });
+        }
+
+        function searchMovies(query) {
+          allResults = [];
+          fetchAllResults(query).then(function () {
+            currentResults = allResults;
+            sortItems(currentResults);
+            appendMovieResults(
+              currentResults.slice(0, maxResults),
+              $("#results")
+            );
+            updatePagination();
+          });
+        }
+
+        function triggerSearch() {
+          var query = $("#search-query").val();
+          if (query) {
+            startIndex = 1;
+            currentPage = 1;
+            searchMovies(query);
+          } else {
+            $("#results").empty();
+            $("#results").append("<p>Please enter a search query</p>");
+            $("#pagination").empty();
+          }
+        }
+
+        function updatePagination() {
+          $("#pagination").empty();
+          var totalPages = Math.ceil(currentResults.length / maxResults);
+          var maxPagesToShow = 5;
+
+          if (totalPages > 1) {
+            var startPage = 1;
+            var endPage = Math.min(totalPages, maxPagesToShow);
+
+            for (var i = startPage; i <= endPage; i++) {
+              var button = $("<button></button>")
+                .attr("data-page", i)
+                .text(i)
+                .addClass("pagination-button");
+              if (i === currentPage) {
+                button.addClass("active");
+              }
+              $("#pagination").append(button);
+            }
+
+            if (totalPages > maxPagesToShow) {
+              $("#pagination").append("<span>...</span>");
+              var lastButton = $("<button></button>")
+                .attr("data-page", totalPages)
+                .text(totalPages)
+                .addClass("pagination-button");
+              $("#pagination").append(lastButton);
+            }
+
+            $("#pagination button").click(function () {
+              currentPage = parseInt($(this).attr("data-page"));
+              startIndex = currentPage;
+              appendMovieResults(
+                currentResults.slice(
+                  (currentPage - 1) * maxResults,
+                  currentPage * maxResults
+                ),
+                $("#results")
+              );
+              updatePagination(); // Update pagination to highlight the current page
+            });
+          }
+        }
+
+        $("#search-button").click(function () {
+          triggerSearch();
+        });
+
+        $("#search-query").keypress(function (event) {
+          if (event.which === 13) {
+            // Enter key pressed
+            triggerSearch();
+          }
+        });
+
+        $("#toggle-layout").click(function () {
+          isGridLayout = !isGridLayout;
+          if (isGridLayout) {
+            $("#results")
+              .removeClass("list-container")
+              .addClass("grid-container");
+            $("#collection")
+              .removeClass("list-container")
+              .addClass("grid-container");
+          } else {
+            $("#results")
+              .removeClass("grid-container")
+              .addClass("list-container");
+            $("#collection")
+              .removeClass("grid-container")
+              .addClass("list-container");
+          }
+          appendMovieResults(
+            currentResults.slice(
+              (currentPage - 1) * maxResults,
+              currentPage * maxResults
+            ),
+            $("#results")
+          );
+          appendMovieResults(currentCollection, $("#collection"));
+        });
+
+        $("#sort-options").change(function () {
+          sortOption = $(this).val();
+          sortItems(currentResults);
+          appendMovieResults(
+            currentResults.slice(
+              (currentPage - 1) * maxResults,
+              currentPage * maxResults
+            ),
+            $("#results")
+          );
+        });
+
+        $("#genre-options").change(function () {
+          selectedGenre = $(this).val();
+          fetchCollection();
+        });
+
+        function fetchGenres() {
+          $.ajax({
+            url: "https://api.themoviedb.org/3/genre/movie/list?api_key=56e665fbc9c321fad4cfb7957c12244b",
+            method: "GET",
+            success: function (response) {
+              if (response.genres) {
+                response.genres.forEach(function (genre) {
+                  $("#genre-options").append(
+                    '<option value="' +
+                      genre.id +
+                      '">' +
+                      genre.name +
+                      "</option>"
+                  );
+                });
+              }
+            },
+            error: function () {
+              $("#genre-options").append(
+                '<option value="">Failed to load genres</option>'
+              );
+            },
+          });
+        }
+
+        function fetchCollection() {
+          var url =
+            "https://api.themoviedb.org/3/discover/movie?api_key=56e665fbc9c321fad4cfb7957c12244b&sort_by=popularity.desc";
+          if (selectedGenre) {
+            url += "&with_genres=" + selectedGenre;
+          }
+          $.ajax({
+            url: url,
+            method: "GET",
+            success: function (response) {
+              if (response.results) {
+                currentCollection = response.results;
+                appendMovieResults(currentCollection, $("#collection"));
+              } else {
+                $("#collection").empty();
+                $("#collection").append(
+                  "<p>No popular movies or TV shows found</p>"
+                );
+              }
+            },
+            error: function () {
+              $("#collection").empty();
+              $("#collection").append(
+                "<p>An error occurred while fetching the collection</p>"
+              );
+            },
+          });
+        }
+
+        fetchGenres();
+        fetchCollection();
+      });
+    </script>
+  </body>
+</html>
